@@ -361,15 +361,22 @@ class AmazonStoreHandler(BaseStoreHandler):
         update_time = get_timeout(1)
         idx = 0
         spinner = ["-", "\\", "|", "/"]
+        check_count = 1
         while self.item_list:
-            if time.time() > update_time:
-                print(recurring_message, spinner[idx], end="\r")
-                update_time = get_timeout(1)
-                idx += 1
-                if idx == len(spinner):
-                    idx = 0
 
             for item in self.item_list:
+                if time.time() > update_time:
+                    print(
+                        recurring_message,
+                        f"Checked {item.id}; Check Count: {check_count} ,",
+                        spinner[idx],
+                        end="\r",
+                    )
+                    update_time = get_timeout(1)
+                    check_count += 1
+                    idx += 1
+                    if idx == len(spinner):
+                        idx = 0
                 start_time = time.time()
                 delay_time = start_time + delay
                 successful = False
@@ -449,21 +456,22 @@ class AmazonStoreHandler(BaseStoreHandler):
 
     def find_qualified_seller(self, item) -> SellerDetail or None:
         item_sellers = self.get_item_sellers(item, amazon_config["FREE_SHIPPING"])
-        for seller in item_sellers:
-            if not self.check_shipping and not free_shipping_check(seller):
-                log.debug("Failed shipping hurdle.")
-                return
-            log.debug("Passed shipping hurdle.")
-            if not condition_check(item, seller):
-                log.debug("Failed item condition hurdle.")
-                return
-            log.debug("Passed item condition hurdle.")
-            if not price_check(item, seller):
-                log.debug("Failed price condition hurdle.")
-                return
-            log.debug("Pass price condition hurdle.")
+        if item_sellers:
+            for seller in item_sellers:
+                if not self.check_shipping and not free_shipping_check(seller):
+                    log.debug("Failed shipping hurdle.")
+                    return
+                log.debug("Passed shipping hurdle.")
+                if not condition_check(item, seller):
+                    log.debug("Failed item condition hurdle.")
+                    return
+                log.debug("Passed item condition hurdle.")
+                if not price_check(item, seller):
+                    log.debug("Failed price condition hurdle.")
+                    return
+                log.debug("Pass price condition hurdle.")
 
-            return seller
+                return seller
 
     def parse_config(self):
         log.debug(f"Processing config file from {CONFIG_FILE_PATH}")
@@ -645,6 +653,13 @@ class AmazonStoreHandler(BaseStoreHandler):
             return sellers
 
         tree = html.fromstring(payload)
+
+        page_asin = tree.xpath("//input[@id='ftSelectAsin']")
+        if page_asin[0].value.strip() != item.id:
+            log.debug(
+                f"Page ASIN was {page_asin[0].value.strip()}; Item ASIN was {item.id}"
+            )
+            return None
 
         # Get the pinned offer, if it exists, by checking for a pinned offer area and add to cart button
         pinned_offer = tree.xpath("//div[@id='aod-sticky-pinned-offer']")
@@ -1276,16 +1291,18 @@ class AmazonStoreHandler(BaseStoreHandler):
             except NoSuchElementException:
                 captcha_element = None
             if captcha_element:
-                captcha_link = self.driver.page_source.split('<img src="')[1].split('">')[0]  # extract captcha link
-                captcha = AmazonCaptcha.fromlink(captcha_link)  # pass it to `fromlink` class method
+                captcha_link = self.driver.page_source.split('<img src="')[1].split(
+                    '">'
+                )[
+                    0
+                ]  # extract captcha link
+                captcha = AmazonCaptcha.fromlink(
+                    captcha_link
+                )  # pass it to `fromlink` class method
                 if captcha == "Not solved":
-                    log.info(
-                        f"Failed to solve {captcha.image_link}"
-                    )
+                    log.info(f"Failed to solve {captcha.image_link}")
                     if self.wait_on_captcha_fail:
-                        log.info(
-                            "Will wait up to 60 seconds for user to solve captcha"
-                        )
+                        log.info("Will wait up to 60 seconds for user to solve captcha")
                         self.send(
                             "User Intervention Required - captcha check",
                             "captcha",
@@ -1295,15 +1312,15 @@ class AmazonStoreHandler(BaseStoreHandler):
                             timeout = self.get_timeout(timeout=60)
                             current_page = self.driver.title
                             while (
-                                    time.time() < timeout
-                                    and self.driver.title == current_page
+                                time.time() < timeout
+                                and self.driver.title == current_page
                             ):
                                 time.sleep(0.5)
                             # check above is not true, then we must have passed captcha, return back to nav handler
                             # Otherwise refresh page to try again - either way, returning to nav page handler
                             if (
-                                    time.time() > timeout
-                                    and self.driver.title == current_page
+                                time.time() > timeout
+                                and self.driver.title == current_page
                             ):
                                 log.info(
                                     "User intervention did not occur in time - will attempt to refresh page and try again"
@@ -1320,13 +1337,17 @@ class AmazonStoreHandler(BaseStoreHandler):
                             "Solving catpcha", "captcha", self.take_screenshots
                         )
                     try:
-                        captcha_field = self.get_amazon_element(key="CAPTCHA_TEXT_FIELD")
+                        captcha_field = self.get_amazon_element(
+                            key="CAPTCHA_TEXT_FIELD"
+                        )
                     except NoSuchElementException:
                         log.debug("Could not locate captcha entry field")
                         captcha_field = None
                     if captcha_field:
                         try:
-                            check_password = self.get_amazon_element(key="PASSWORD_TEXT_FIELD")
+                            check_password = self.get_amazon_element(
+                                key="PASSWORD_TEXT_FIELD"
+                            )
                         except NoSuchElementException:
                             check_password = None
                         if check_password:
@@ -1338,6 +1359,7 @@ class AmazonStoreHandler(BaseStoreHandler):
                     else:
                         return False
             return True
+
         return wrapper
 
 
